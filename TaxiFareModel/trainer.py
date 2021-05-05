@@ -3,7 +3,7 @@ from TaxiFareModel.encoders import TimeFeaturesEncoder, DistanceTransformer
 from TaxiFareModel.utils import compute_rmse
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LassoCV
 
@@ -24,7 +24,7 @@ class Trainer():
                                    ('distance_scaling', StandardScaler()) ] )
         pipe_time = Pipeline([ ('time_transformer', TimeFeaturesEncoder("pickup_datetime")),
                         ('time_encode', OneHotEncoder(handle_unknown='ignore',sparse=False)) ])
-        pipe_passengers = Pipeline([ ('passenger_scaler', StandardScaler())])
+        pipe_passengers = Pipeline([ ('passenger_scaler', RobustScaler())])
         
         distance_columns = ["pickup_latitude","pickup_longitude","dropoff_latitude","dropoff_longitude"]
         time_columns     = ['pickup_datetime']
@@ -34,9 +34,7 @@ class Trainer():
                                           ('time', pipe_time, time_columns ), 
                                           ('passenger', pipe_passengers, passenger_columns )], remainder = 'drop')
         
-        pipe_model = Pipeline([ ('transformer', preproc_pipe),('regressor', LassoCV(cv=5, n_alphas=5)) ] )
-
-        self.pipeline = pipe_model
+        self.pipeline = Pipeline([ ('transformer', preproc_pipe),('regressor', LassoCV(cv=5, n_alphas=5)) ] )
 
     def run(self):
         """set and train the pipeline"""
@@ -67,4 +65,4 @@ if __name__ == "__main__":
     model.run()
     # evaluate
     rmse = model.evaluate(X_test,y_test)
-    print('TODO')
+    print('TODO ...')
