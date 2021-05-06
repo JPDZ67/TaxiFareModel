@@ -1,5 +1,6 @@
-from memoized_property import memoized_property
 import mlflow
+import joblib
+from memoized_property import memoized_property
 from  mlflow.tracking import MlflowClient
 from TaxiFareModel.data import get_data, clean_data
 from TaxiFareModel.encoders import TimeFeaturesEncoder, DistanceTransformer
@@ -51,7 +52,7 @@ class Trainer():
         """evaluates the pipeline on df_test and return the RMSE"""
         y_pred = self.pipeline.predict(X_test)
         rmse_ = compute_rmse (y_pred, y_test)
-        
+
         print(f"RMSE = {rmse_}")
 
         self.experiment_name = EXPERIMENT_NAME
@@ -61,6 +62,12 @@ class Trainer():
         self.mlflow_log_param("student_name", myname)
 
         return rmse_
+
+    def save_model(self):
+        """Save the model into a .joblib format"""
+        filename = 'finalized_model.pkl'
+        joblib.dump(self.pipeline, filename)
+
 
     @memoized_property
     def mlflow_client(self):
@@ -101,4 +108,7 @@ if __name__ == "__main__":
     model.run()
     # evaluate
     rmse = model.evaluate(X_test,y_test)
+    # save the model
+    model.save_model()
+    
     print('TODO ...')
