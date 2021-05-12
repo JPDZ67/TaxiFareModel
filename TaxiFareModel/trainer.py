@@ -1,5 +1,6 @@
 import mlflow
 import joblib
+import datetime
 from memoized_property import memoized_property
 from  mlflow.tracking import MlflowClient
 from TaxiFareModel.data import get_data, clean_data
@@ -10,13 +11,17 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LassoCV
+from xgboost import XGBRegressor
+from google.cloud import storage
 
 MLFLOW_URI = "https://mlflow.lewagon.co/"
 myname = "Josep"
 EXPERIMENT_NAME = f"TaxifareModel_{myname}"
+BUCKET_NAME = "wagon-ml-josep-566"
+REMOTE_FOLDER = "models"
 
 class Trainer():
-    def __init__(self, X, y):
+    def __init__(self, estimator, X, y):
         """
             X: pandas DataFrame
             y: pandas Series
@@ -24,6 +29,7 @@ class Trainer():
         self.pipeline = None
         self.X = X
         self.y = y
+        self.estimator = estimator
 
     def set_pipeline(self):
         """defines the pipeline as a class attribute"""
@@ -40,9 +46,14 @@ class Trainer():
         preproc_pipe = ColumnTransformer([('distance', pipe_distance, distance_columns),
                                           ('time', pipe_time, time_columns ), 
                                           ('passenger', pipe_passengers, passenger_columns )], remainder = 'drop')
-        
-        self.pipeline = Pipeline([ ('transformer', preproc_pipe),('regressor', LassoCV(cv=5, n_alphas=5)) ] )
-
+        if self.estimator == 'Lasso':
+            self.pipeline = Pipeline([ ('transformer', preproc_pipe),('regressor', LassoCV(cv=5, n_alphas=5)) ] )
+        elif self.estimator == 'XGBoost':
+            self.pipeline = Pipeline([ ('transformer', preproc_pipe),('regressor',XGBRegressor(n_estimators=300, learning_rate=0.05)) ] )
+        else:
+            self.estimator == 'XGBoost'
+            self.pipeline = Pipeline([ ('transformer', preproc_pipe),('regressor',XGBRegressor(n_estimators=300, learning_rate=0.05)) ] )
+               
     def run(self):
         """set and train the pipeline"""
         self.set_pipeline()
@@ -58,15 +69,37 @@ class Trainer():
         self.experiment_name = EXPERIMENT_NAME
 
         self.mlflow_log_metric("rmse", rmse_)
-        self.mlflow_log_param("model", "LassoCV(cv=5, n_alphas=5)")
+        self.mlflow_log_param("model", self.estimator)
         self.mlflow_log_param("student_name", myname)
 
         return rmse_
 
     def save_model(self):
         """Save the model into a .joblib format"""
-        filename = 'finalized_model.pkl'
+        filename = f"{self.estimator}_finalized_model.pkl"
         joblib.dump(self.pipeline, filename)
+        client = storage.Client()
+        # https://console.cloud.google.com/storage/browser/[bucket-id]/
+        bucket = client.get_bucket(BUCKET_NAME)
+        # Upload model
+        ts = datetime.datetime.now().timestamp()
+        blob = bucket.blob(f"{REMOTE_FOLDER}/{filename}_{ts}")
+        blob.upload_from_filename(filename=filename)  
+
+    def load_last_model(self):
+        """Save the model into a .joblib format"""
+        client = storage.Client()
+        # https://console.cloud.google.com/storage/browser/[bucket-id]/
+        bucket = client.get_bucket(BUCKET_NAME)
+        # Download model
+        blobs_ = client.list_blobs(bucket, prefix=f"{REMOTE_FOLDER}/{self.estimator}")
+        for x_ in blobs_:
+            print(f"File = {x_.name}")
+            blob_to_download = x_
+        blob_ = bucket.blob(blob_to_download.name)
+        blob_.download_to_filename("model_downloaded.pkl")
+        model_ = joblib.load("model_downloaded.pkl")
+        return model_
 
 
     @memoized_property
@@ -103,12 +136,15 @@ if __name__ == "__main__":
     X = df_cleaned[features]; y = df_cleaned[target]
     # hold out
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2,random_state=0)
-    # train
-    model = Trainer(X_train,y_train)
+    # train XGBoost or Lasso
+    model = Trainer('XGBoost',X_train,y_train)
     model.run()
     # evaluate
     rmse = model.evaluate(X_test,y_test)
     # save the model
     model.save_model()
+    # load the model
+    model_to_predict = model.load_last_model()
+
     
-    print('TODO ...')
+    print('TODO ....')
